@@ -12,10 +12,15 @@ import backend_pb2_grpc
 
 
 class BackendService(backend_pb2_grpc.BackendServicer):
+    def __init__(self):
+        self.img = None
+
     def _test_func(self, path):
         image = cv2.imread(path)
         h, w, _ = image.shape
         print(f"image shape: w-{w} h-{h}")
+
+        self.img = image
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image_str = base64.b64encode(image)
@@ -32,24 +37,19 @@ class BackendService(backend_pb2_grpc.BackendServicer):
         return response_message
 
     def _read_img(self, path):
-    
+
         img = cv2.imread(path)
         img_array = np.asarray(img)
-        img2 = img_array.astype(float) 
-        img2 = (np.maximum(img2,0) / img2.max()) * 255.0
+        img2 = img_array.astype(float)
+        img2 = (np.maximum(img2, 0) / img2.max()) * 255.0
         img2 = np.uint8(img2)
-        
+
         return img2
-        
 
     def predict_data(self, request, context):
 
-     
-        path2 = request.path2
-        
-        arreglo_path2 = self._read_img(path=path2)
-        #1. llamando la funcion pre-proccess que retorna la imagen en fromato batch
-        batch_array_img = self.preprocess(arreglo_path2)
+        # 1. llamando la funcion pre-proccess que retorna la imagen en fromato batch
+        batch_array_img = self.preprocess(self.img)
         # 2. llamando la funcion load model y predict para retornar la probabilidad y la clase
         model = self.model_fun()
         prediction = np.argmax(model.predict(batch_array_img))
@@ -63,7 +63,7 @@ class BackendService(backend_pb2_grpc.BackendServicer):
             label = "viral"
         response_message = backend_pb2.image_prediction(label=label, proba=proba)
         return response_message
-        
+
     def preprocess(self, array):
         array = cv2.resize(array, (512, 512))
         array = cv2.cvtColor(array, cv2.COLOR_BGR2GRAY)
@@ -75,13 +75,17 @@ class BackendService(backend_pb2_grpc.BackendServicer):
         return array
 
     def model_fun(self):
-        model_cnn = tf.keras.models.load_model('WilhemNet_86.h5')
+        model_cnn = tf.keras.models.load_model("WilhemNet_86.h5")
         return model_cnn
 
 
 def serve():
     maxMsgLength = 1024 * 1024 * 1024
-    options = [('grpc.max_message_length', maxMsgLength),('grpc.max_send_message_length', maxMsgLength),('grpc.max_receive_message_length', maxMsgLength)]
+    options = [
+        ("grpc.max_message_length", maxMsgLength),
+        ("grpc.max_send_message_length", maxMsgLength),
+        ("grpc.max_receive_message_length", maxMsgLength),
+    ]
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10), options=options)
     backend_pb2_grpc.add_BackendServicer_to_server(BackendService(), server)
     server.add_insecure_port("[::]:50051")
